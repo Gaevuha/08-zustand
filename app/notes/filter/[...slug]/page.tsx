@@ -1,14 +1,18 @@
+//app/notes/filter/[...slug]/page.tsx
 import NotesClient from './Notes.client';
 import { fetchNotes } from '@/lib/api';
 import { notFound } from 'next/navigation';
+import type { Metadata } from 'next';
+
+export const dynamic = 'force-dynamic';
 
 type Props = {
-  params: Promise<{ slug?: string[] }>;
+  params: { slug?: string[] };
 };
 
-export async function generateMetadata({ params }: Props) {
-  const { slug } = await params;
-  const tag = slug?.[0] || 'All';
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  // const { slug } = params;
+  const tag = params.slug?.[0] || 'All';
   const tagParam = tag === 'All' ? undefined : tag;
 
   const data = await fetchNotes('', 1, 12, tagParam);
