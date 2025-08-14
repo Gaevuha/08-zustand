@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as yup from 'yup';
 import iziToast from 'izitoast';
 import 'izitoast/dist/css/iziToast.min.css';
 import css from './NoteForm.module.css';
 import { useNoteStore, initialDraft } from '@/lib/store/noteStore';
-import { createNote } from '@/lib/api';
+import { createNote, FetchNotesResponse } from '@/lib/api';
 import type { NewNoteData } from '@/types/note';
 import type { ISchema } from 'yup';
 
@@ -29,6 +30,7 @@ const schema = yup.object({
 
 export default function NoteForm({ categories }: Props) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const draft = useNoteStore(state => state.draft);
   const setDraft = useNoteStore(state => state.setDraft);
   const clearDraft = useNoteStore(state => state.clearDraft);
@@ -37,7 +39,33 @@ export default function NoteForm({ categories }: Props) {
   const [errors, setErrors] = useState<
     Partial<Record<keyof NewNoteData, string>>
   >({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: (data: NewNoteData) => createNote(data),
+    onSuccess: newNote => {
+      queryClient.setQueryData<FetchNotesResponse>(['notes'], oldData => {
+        if (!oldData) return { notes: [newNote], totalPages: 1 };
+        return { ...oldData, notes: [newNote, ...oldData.notes] };
+      });
+
+      clearDraft();
+      iziToast.success({
+        title: 'Success',
+        message: 'Note created successfully!',
+        position: 'topRight',
+      });
+      router.back();
+    },
+    onError: (err: unknown) => {
+      if (err instanceof Error) {
+        iziToast.error({
+          title: 'Error',
+          message: err.message,
+          position: 'topRight',
+        });
+      }
+    },
+  });
 
   useEffect(() => {
     setFormData(draft || initialDraft);
@@ -64,24 +92,14 @@ export default function NoteForm({ categories }: Props) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsSubmitting(true);
+  const handleSubmit = async (formData: FormData) => {
+    const values = Object.fromEntries(
+      formData.entries(),
+    ) as unknown as NewNoteData;
 
     try {
-      await schema.validate(formData, { abortEarly: false });
-      await createNote(formData);
-      clearDraft();
-
-      if (typeof window !== 'undefined') {
-        iziToast.success({
-          title: 'Success',
-          message: 'Note created successfully!',
-          position: 'topRight',
-        });
-      }
-
-      router.back();
+      await schema.validate(values, { abortEarly: false });
+      mutation.mutate(values);
     } catch (err) {
       if (err instanceof yup.ValidationError) {
         const fieldErrors: Partial<Record<keyof NewNoteData, string>> = {};
@@ -89,24 +107,12 @@ export default function NoteForm({ categories }: Props) {
           if (e.path) fieldErrors[e.path as keyof NewNoteData] = e.message;
         });
         setErrors(fieldErrors);
-      } else if (err instanceof Error && typeof window !== 'undefined') {
-        iziToast.error({
-          title: 'Error',
-          message: err.message,
-          position: 'topRight',
-        });
       }
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
-  const handleCancel = () => {
-    router.back();
-  };
-
   return (
-    <form className={css.form} onSubmit={handleSubmit} noValidate>
+    <form className={css.form} action={handleSubmit}>
       <div className={css.formGroup}>
         <label htmlFor="title">Title</label>
         <input
@@ -115,9 +121,9 @@ export default function NoteForm({ categories }: Props) {
           type="text"
           className={css.input}
           placeholder="Enter title"
-          value={formData.title}
+          defaultValue={formData.title}
           onChange={handleChange}
-          disabled={isSubmitting}
+          disabled={mutation.isPending}
         />
         {errors.title && <p className={css.error}>{errors.title}</p>}
       </div>
@@ -130,9 +136,9 @@ export default function NoteForm({ categories }: Props) {
           rows={8}
           className={css.textarea}
           placeholder="Enter content"
-          value={formData.content}
+          defaultValue={formData.content}
           onChange={handleChange}
-          disabled={isSubmitting}
+          disabled={mutation.isPending}
         />
         {errors.content && <p className={css.error}>{errors.content}</p>}
       </div>
@@ -143,22 +149,18 @@ export default function NoteForm({ categories }: Props) {
           id="tag"
           name="tag"
           className={css.select}
-          value={formData.tag}
+          defaultValue={formData.tag}
           onChange={handleChange}
-          disabled={isSubmitting}
+          disabled={mutation.isPending}
         >
-          <option value="">Select a tag</option>
-          {categories?.length
-            ? categories.map(cat => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))
-            : ['Todo', 'Work', 'Personal', 'Meeting', 'Shopping'].map(tag => (
-                <option key={tag} value={tag}>
-                  {tag}
-                </option>
-              ))}
+          {(categories?.length
+            ? categories
+            : ['Todo', 'Work', 'Personal', 'Meeting', 'Shopping']
+          ).map(tag => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
         </select>
         {errors.tag && <p className={css.error}>{errors.tag}</p>}
       </div>
@@ -166,18 +168,18 @@ export default function NoteForm({ categories }: Props) {
       <div className={css.actions}>
         <button
           type="button"
-          onClick={handleCancel}
+          onClick={() => router.back()}
           className={css.cancelButton}
-          disabled={isSubmitting}
+          disabled={mutation.isPending}
         >
           Cancel
         </button>
         <button
           type="submit"
           className={css.submitButton}
-          disabled={isSubmitting}
+          disabled={mutation.isPending}
         >
-          {isSubmitting ? 'Creating...' : 'Create note'}
+          {mutation.isPending ? 'Creating...' : 'Create note'}
         </button>
       </div>
     </form>

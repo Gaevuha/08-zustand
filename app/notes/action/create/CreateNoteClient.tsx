@@ -1,8 +1,7 @@
-// app/notes/action/create/CreateNoteClient.tsx
 'use client';
 
-import dynamic from 'next/dynamic';
 import css from './CreateNote.module.css';
+import dynamic from 'next/dynamic';
 
 const NoteForm = dynamic(() => import('@/components/NoteForm/NoteForm'), {
   ssr: false,

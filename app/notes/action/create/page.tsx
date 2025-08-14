@@ -1,7 +1,8 @@
 // app/notes/action/create/page.tsx
 import CreateNoteClient from './CreateNoteClient';
+import type { Metadata } from 'next';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Create note',
   description: 'Fill out the form to create a note',
   openGraph: {
